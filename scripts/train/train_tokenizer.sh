@@ -1,4 +1,7 @@
-CUDA_VISIBLE_DEVICES=0 accelerate launch  --num_processes 1 --main_process_port 29701 train_tokenizer.py \
+export NCCL_P2P_DISABLE=1
+export NCCL_IB_DISABLE=1
+export NCCL_TIMEOUT=1200
+CUDA_VISIBLE_DEVICES=2 accelerate launch  --num_processes 1 --main_process_port 29701 train_tokenizer.py \
 --add-hand True \
 --batch-size 64 \
 --lr 5e-5 \
@@ -13,7 +16,7 @@ CUDA_VISIBLE_DEVICES=0 accelerate launch  --num_processes 1 --main_process_port 
 --quantizer ema_reset \
 --loss-vel 0.5 \
 --recons-loss l1_smooth \
---exp-name mmfsqad_4096_causal \
+--exp-name mmfsqad_4096_causal_debug \
 --quantizer FSQ \
 --nb-code 4096 \
 --motion_type vector_272 \
