@@ -45,18 +45,8 @@ writer = SummaryWriter(args.out_dir)
 logger.info(json.dumps(vars(args), indent=4, sort_keys=True))
 
 
-
-# if args.dataname == 'kit' : 
-#     dataset_opt_path = 'checkpoints/kit/Comp_v6_KLD005/opt.txt'  
-#     args.nb_joints = 21
-# elif args.dataname == 't2m':
-#     dataset_opt_path = 'checkpoints/t2m/Comp_v6_KLD005/opt.txt'
-#     args.nb_joints = 22
-# elif args.dataname == 'motionmillion':
-#     dataset_opt_path = 'checkpoints/t2m/Comp_v6_KLD005/opt.txt'
-#     args.nb_joints = 22
 args.nb_joints = 22
-
+#breakpoint()
 #logger.info(f'Training on {args.dataname}, motions are with {args.nb_joints} joints')
 comp_device = accelerator.device
 
@@ -64,21 +54,20 @@ comp_device = accelerator.device
 train_loader, train_mean, train_std = dataset_VQ.DATALoader(args.dataname,
                                         args.batch_size,
                                         args.motion_type, 
-                                        args.text_type,
-                                        args.version, 
                                         'train', 
-                                        args.debug,
                                         window_size=args.window_size,
                                         unit_length=2**args.down_t,
                                         num_workers=args.num_workers,
-                                        add_hand=args.add_hand)
+                                        add_hand=args.add_hand,
+                                        data_root=args.data_root)
 
-val_loader, test_mean, test_std = dataset_TM_eval.MotionMillionFSQDATALoader(args.dataname, True,
+val_loader, test_mean, test_std = dataset_TM_eval.MotionMillionFSQDATALoader(args.dataname, 
+                                        True,
                                         args.batch_size,
                                         unit_length=2**args.down_t,
-                                        version=args.version,
                                         add_hand=args.add_hand,
-                                        motion_type=args.motion_type)
+                                        motion_type=args.motion_type,
+                                        data_root=args.data_root)
 #breakpoint()
 ##### ---- Network ---- #####
 net = vqvae.HumanVQVAE(args, ## use args to define different parameters in different quantizers
@@ -164,7 +153,7 @@ if not args.resume_pth:
         if args.use_root_loss:
             loss_root = Loss.forward_root(pred_motion, gt_motion)
             loss = loss + args.root_loss * loss_root
-            
+        
         optimizer.zero_grad()
         accelerator.backward(loss)
         optimizer.step()

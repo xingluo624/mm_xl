@@ -17,16 +17,15 @@ def collate_fn(batch):
 
 '''For use of training text-2-motion generative model'''
 class MotionMillionFSQDataset(data.Dataset):
-    def __init__(self, dataset_name, is_test,  feat_bias = 5, max_text_len = 20, unit_length = 4, version = "version1/tokenizer_no_mirror",add_hand=False,motion_type='vector_272'):
+    def __init__(self, dataset_name, is_test, unit_length = 4,add_hand=False,motion_type='vector_272', data_root=''):
         
         self.max_length = 20
         self.pointer = 0
         self.dataset_name = dataset_name
         self.is_test = is_test
-        self.max_text_len = max_text_len
         self.unit_length = unit_length
         
-        self.version = version
+        self.data_root = data_root
         self.add_hand = add_hand
         self.motion_type = motion_type
         
@@ -34,30 +33,27 @@ class MotionMillionFSQDataset(data.Dataset):
             # self.data_root = './dataset/HumanML3D'
             # self.motion_dir = pjoin(self.data_root, 'new_joint_vecs')
             # self.text_dir = pjoin(self.data_root, 'texts')
-            self.data_root = '/ssd/zhengjiakun/dataset/MotionMillion/MotionMillion'
+            if not data_root:
+                self.data_root = '/ssd/zhengjiakun/dataset/MotionMillion/MotionMillion'
             self.motion_dir = pjoin(self.data_root, 'motion_data', "vector_272")
             self.text_dir = pjoin(self.data_root, "texts")
             self.joints_num = 22
-            radius = 4
-            fps = 60
             self.max_motion_length = 600
-            dim_pose = 263
-            kinematic_chain = paramUtil.t2m_kinematic_chain
             self.meta_dir = pjoin(self.data_root, 'mean_std', "vector_272")
             if is_test:
-                split_file = pjoin(self.data_root, 'split', self.version, 'test.txt')
+                split_file = pjoin(self.data_root, 'split', 'version1/tokenizer_96', 'test.txt')
             else:
-                split_file = pjoin(self.data_root, 'split', self.version, 'val.txt')
+                split_file = pjoin(self.data_root, 'split', 'version1/tokenizer_96', 'val.txt')
         
         elif dataset_name == 'mocap':
-            self.data_root = '/ssd/caoshiqin/datasets/our_mocap_data/processed_data'
+            if not data_root:
+                self.data_root = '/ssd/caoshiqin/datasets/our_mocap_data/processed_data'
             self.motion_dir = self.data_root
             self.text_dir = self.data_root
             self.joints_num = 22
             self.max_motion_length = 900
-            self.meta_dir = '/ssd/zhengjiakun/dataset/MotionMillion/MotionMillion/mean_std/vector_272'
+            self.meta_dir = 'mean_std/motionmillion'
             split_file = pjoin(self.data_root,'splits' ,'all.txt')
-            
             
             
         mean = np.load(pjoin(self.meta_dir, 'mean.npy'))
@@ -162,15 +158,24 @@ class MotionMillionFSQDataset(data.Dataset):
 
 
 
-def MotionMillionFSQDATALoader(dataset_name, is_test,
-                batch_size, w_vectorizer,
-                num_workers = 8, unit_length = 4, version = "version1/tokenizer_no_mirror",add_hand=False,motion_type='vector_274') : 
+def MotionMillionFSQDATALoader(dataset_name, 
+                is_test,
+                batch_size, 
+                unit_length = 4, 
+                add_hand=False,
+                motion_type='vector_274',
+                data_root=''): 
     
-    val_dataset = MotionMillionFSQDataset(dataset_name, is_test, unit_length=unit_length, version=version,add_hand=add_hand,motion_type=motion_type)
+    val_dataset = MotionMillionFSQDataset(dataset_name, 
+                                          is_test,
+                                          unit_length=unit_length,
+                                          add_hand=add_hand,
+                                          motion_type=motion_type,
+                                          data_root=data_root)
     val_loader = torch.utils.data.DataLoader( val_dataset, 
                                               batch_size,
                                               shuffle = True,
-                                              num_workers=40, # num_workers,
+                                              num_workers=40, 
                                               collate_fn=collate_fn,
                                               drop_last = True,
                                               prefetch_factor=2)

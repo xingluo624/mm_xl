@@ -5,7 +5,7 @@ import smplx
 
 # ================= 配置区域 =================
 # 请修改为你的实际路径
-DATA_DIR = 'vis_result/326'  # 存放 gt_0.npz, pred_0.npz 的文件夹
+DATA_DIR = 'visual_test/6'  # 存放 gt_0.npz, pred_0.npz 的文件夹
 SMPL_MODEL_PATH = 'body_models/human_model_files' # SMPL 模型文件夹 (包含 SMPL_MALE.pkl 等)
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 NUM_SAMPLES = 40  # 0 到 9
@@ -121,7 +121,7 @@ def main():
     
     for i in range(NUM_SAMPLES):
         gt_path = os.path.join(DATA_DIR, f'gt_{i}.npz')
-        pred_path = os.path.join(DATA_DIR, f'pred_{i}.npz')
+        pred_path = os.path.join(DATA_DIR, f'fsq_{i}.npz')
         
         if not os.path.exists(gt_path) or not os.path.exists(pred_path):
             print(f"⚠️ 跳过样本 {i} (文件缺失)")

@@ -109,6 +109,8 @@ class FSQ(Module):
         offset = torch.where(self._levels % 2 == 0, 0.5, 0.0)
         shift = (offset / half_l).atanh()
         return (z + shift).tanh() * half_l - offset
+        # z = 2 * torch.sigmoid(1.6*(z + shift)) -1
+        # return  z * half_l - offset
 
     def quantize(self, z):
         """ Quantizes z, returns quantized zhat, same shape as z. """

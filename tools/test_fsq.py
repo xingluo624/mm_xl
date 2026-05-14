@@ -1,10 +1,13 @@
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
 import os 
 import torch
 import options.option_transformer as option_trans
 import numpy as np
 import warnings
 import models.vqvae as vqvae
-from transformers import AutoTokenizer, AutoModelForCausalLM ,AutoProcessor ,AutoModelForImageTextToText
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from utils.quaternion import *
 from peft import PeftModel
 import random
@@ -13,16 +16,24 @@ import gc
 from utils.quaternion import *
 from visualize.plot_3d_global import plot_3d_motion
 from visualize.smplx2joints import process_smplx_data
-#from visualize.motion_ik import convert_motion_mp4
-from PIL import Image
+from visualize.motion_ik import convert_motion_mp4
+
 import imageio
 from utils.face_z_align_util import rotation_6d_to_matrix, matrix_to_axis_angle
 import moviepy as mp
 import re
 
 warnings.filterwarnings('ignore')
-import json 
 
+
+def extract_motion_ids(s):
+    # 使用正则表达式提取所有数字
+    ids = list(map(int, re.findall(r'<motion_id_(\d+)>', s)))
+    
+    # 移除第一个和最后一个元素
+    if len(ids) >= 2:
+        return ids[1:-1]
+    return []
 
 def rotations_matrix_to_smplx85(rotations_matrix, translation):
     
@@ -148,24 +159,7 @@ def smplx85_2_smplx322(smplx_no_shape_data):
     
     return result
 
-# def visualize_smplx_85(data, title=None, output_path='./recon_272/0_14_rot_new3.mp4', fps=60):
-#     #smpl可视化
-#     smplx_85_data = data
-#     if len(smplx_85_data.shape) == 3:
-#        smplx_85_data = np.squeeze(smplx_85_data, axis=0)
-    
-#     smplx_85_data = smplx85_2_smplx322(smplx_85_data)
-#     vert, joints, motion, faces = process_smplx_data(smplx_85_data, norm_global_orient=False, transform=False)
-    
-#     xyz = joints[:, :22, :].reshape(-1, 22, 3).detach().cpu().numpy()
-#     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-#     convert_motion_mp4(xyz, output_path)
-
-
-
 def visualize_smplx_85(data, title=None, output_path='./recon_272/0_14_rot_new3.mp4', fps=60):
-    #火柴人
     smplx_85_data = data
     if len(smplx_85_data.shape) == 3:
        smplx_85_data = np.squeeze(smplx_85_data, axis=0)
@@ -176,10 +170,11 @@ def visualize_smplx_85(data, title=None, output_path='./recon_272/0_14_rot_new3.
     xyz = joints[:, :22, :].reshape(-1, 22, 3).detach().cpu().numpy()
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
-    img = plot_3d_motion([xyz, None, None])
-    imageio.mimsave(output_path, np.array(img), fps=fps)
-    out_video = mp.VideoFileClip(output_path)
-    out_video.write_videofile(output_path.replace('.gif', '.mp4'))
+    convert_motion_mp4(xyz, output_path)
+    # img = plot_3d_motion([xyz, None, None])
+    # imageio.mimsave(output_path, np.array(img), fps=fps)
+    # out_video = mp.VideoFileClip(output_path)
+    # out_video.write_videofile(output_path.replace('.gif', '.mp4'))
 
 @torch.no_grad()
 def plot(pred_pose_denorm, dataname):
@@ -188,11 +183,33 @@ def plot(pred_pose_denorm, dataname):
     img  = visualize_smplx_85(pred_xyz)
     return pred_xyz, img
 
-
-
-
-        
-
+def load_model(comp_device,args):
+    net = vqvae.HumanVQVAE(args, ## use args to define different parameters in different quantizers
+                        args.nb_code,
+                        args.code_dim,
+                        args.output_emb_width,
+                        args.down_t,
+                        args.stride_t,
+                        args.width,
+                        args.depth,
+                        args.dilation_growth_rate,
+                        args.vq_act,
+                        args.vq_norm,
+                        args.kernel_size,
+                        args.use_patcher,
+                        args.patch_size,
+                        args.patch_method,
+                        args.use_attn)
+    ckpt = torch.load(args.resume_pth, map_location='cpu')["net"]
+    # net.load_state_dict(ckpt['net'], strict=True)
+    ckpt = {k.replace('module.', ''): v for k, v in ckpt.items()}
+    net.load_state_dict(ckpt, strict=True)
+    net.eval()
+    net.to(comp_device)
+    print('Load VQVAE model successfully!')
+    
+    return net
+ 
 def save_smplx85_to_npz(output_path: str, smplx_85: np.ndarray, fps: float = 30.0):
     
     n_frames = smplx_85.shape[0]
@@ -208,34 +225,84 @@ def save_smplx85_to_npz(output_path: str, smplx_85: np.ndarray, fps: float = 30.
     # 构造与图中一致的字典结构
     np.savez(output_path,poses=body_pose_3d,trans=root_translation,betas=betas,gender='male',mocap_framerate=fps)
     print(f"Successfully saved SMPLX 85D data to {output_path}")
-    
+
 if __name__ == "__main__":
-
-    data = np.load("/gemini-2/space/zjk/csq/project/MotionMillion-Codes/vis_result/pred_1.npz")
+    comp_device = torch.device('cuda')
+    random.seed(42)
+    args = option_trans.get_args_parser()
     
-    poses = data['poses']  
-    trans = data['trans']  
-    betas = data['betas']  
-
-    N = poses.shape[0]  
-
-    poses_flat = poses.reshape(N, -1)  
-    betas_expand = np.tile(betas, (N, 1))  
-
+    net = load_model(comp_device, args)
+    basedir = '/ssd/caoshiqin/datasets/our_mocap_data/processed_data'
+    split_path = '/ssd/caoshiqin/datasets/our_mocap_data/processed_data/splits/all.txt'
     
-    smpl85 = np.concatenate([poses_flat, trans, betas_expand], axis=1)
+    mean = np.load('/ssd/zhengjiakun/dataset/MotionMillion/MotionMillion/mean_std/vector_272/mean.npy')
+    std = np.load('/ssd/zhengjiakun/dataset/MotionMillion/MotionMillion/mean_std/vector_272/std.npy')
+    
+    if args.motion_type == 'vector_274':
+        new_dim_mean = np.array([0.0, 0.0], dtype=np.float32)  
+        new_dim_std = np.array([1.0, 1.0], dtype=np.float32)    
+        mean = np.concatenate([mean, new_dim_mean], axis=0)  # shape (274,)
+        std = np.concatenate([std, new_dim_std], axis=0) 
+    
+    with open(split_path, "r", encoding="utf-8") as f:
+        paths = [line.strip() for line in f if line.strip()]
+    
+    paths = paths*10
+    motion_paths = random.sample(paths, 40)
     #breakpoint()
+    expname = input('Input experiment name: ')
+    save_root = os.path.join('visual_test', expname)
     
-
-    save_path = os.path.join('vis_result','npz.gif')
+    os.makedirs(save_root, exist_ok=True)
+    for i in range(40):
+        name = motion_paths[i]
+        # motion_path = os.path.join(basedir, "motion_272",motion_path+".npy").
+        motion_path = ''
+        if args.motion_type == 'vector_272':
+            motion_path = os.path.join(basedir, name + '.npy')
+            print(f"Loading motion data from {motion_path}")
+        elif args.motion_type == 'vector_274':
+            motion_path = os.path.join(basedir, name.split('/')[0],'motion_274.npy')
+            print(f"Loading motion data from {motion_path}")
+        try:
+            motion = np.load(motion_path)
+        except:
+            print(motion_path)
+            continue
+        
+        
+        motion_data = (motion - mean) / std
     
-    visualize_smplx_85(smpl85, output_path=save_path, title='vis_npz', fps=30)
-    
-    
-    # output_path_fsq = os.path.join('vis_result',  expname, f'{fsqname}.gif')
-    # output_path_pred = os.path.join('vis_result', expname, f'{predname}.gif')
-    # output_path_gt = os.path.join('vis_result', expname, f'{gtname}.gif')
-    
-    # visualize_smplx_85(fsq_positions_with_heading, output_path=output_path_fsq, title=fsqname, fps=args.fps)
-    # visualize_smplx_85(pred_positions_with_heading, output_path=output_path_pred, title=predname, fps=args.fps)
-    # visualize_smplx_85(gt_positions_with_heading, output_path=output_path_gt, title=gtname, fps=args.fps)
+        
+        motion_data = torch.from_numpy(motion_data).to(comp_device).float()
+        motion_data = motion_data.unsqueeze(0)
+        motion_index = net.encode(motion_data)
+        fsq_data = net.forward_decoder(motion_index)
+        
+        fsqpose = inv_transform(fsq_data.detach().cpu().numpy(), mean, std)
+        
+        fsqname = 'fsq_{}'.format(i)
+        gtname =   'gt_{}'.format(i)
+        
+        fsq_npy_path = os.path.join('visual_test',expname,f'{fsqname}.npy')
+        gt_npy_path = os.path.join('visual_test',expname,f'{gtname}.npy')
+        
+        # np.save(fsq_npy_path, fsqpose[0])
+        # np.save(gt_npy_path, motion)
+            
+        # motion = torch.from_numpy(motion).to(comp_device).float()    
+        fsq_positions_with_heading = recover_from_local_rotation(fsqpose.squeeze(0), 22)
+        gt_positions_with_heading = recover_from_local_rotation(motion.squeeze(), 22)
+        
+        fsq_npz_path = os.path.join('visual_test',expname,f'{fsqname}.npz')
+        gt_npz_path = os.path.join('visual_test',expname,f'{gtname}.npz')
+        
+        save_smplx85_to_npz(fsq_npz_path,fsq_positions_with_heading)
+        save_smplx85_to_npz(gt_npz_path,gt_positions_with_heading)
+            
+        # output_path_fsq = os.path.join('visual_test', expname,f'{fsqname}.gif')
+        # output_path_gt = os.path.join('visual_test', expname,f'{gtname}.gif')
+            
+        # visualize_smplx_85(fsq_positions_with_heading, output_path=output_path_fsq,title=fsqname,fps=args.fps)
+        # visualize_smplx_85(gt_positions_with_heading, output_path=output_path_gt,title=gtname,fps=args.fps)
+   

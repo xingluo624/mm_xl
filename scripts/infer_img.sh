@@ -1,0 +1,16 @@
+CUDA_VISIBLE_DEVICES=0 python infer_img.py \
+--add-hand True \
+--nb-code 4096 \
+--resume-pth FSQ/507508/net_2100000.pth \
+--down-t 1 \
+--depth 3 \
+--quantizer FSQ \
+--dilation-growth-rate 3 \
+--vq-act relu \
+--vq-norm LN \
+--fps 30 \
+--kernel-size 3 \
+--use_patcher \
+--patch_size 1 \
+--patch_method haar \
+--motion_type vector_274 \

@@ -6,6 +6,7 @@ def get_args_parser():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     ## dataloader  
+    parser.add_argument('--data-root', type=str, default='', help='mocap dataset path')
     parser.add_argument('--dataname', type=str, default='motionmillion', help='dataset directory')
     parser.add_argument('--batch-size', default=128, type=int, help='batch size')
     parser.add_argument('--window-size', type=int, default=64, help='training motion length')

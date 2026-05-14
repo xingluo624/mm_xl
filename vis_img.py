@@ -311,69 +311,58 @@ def save_smplx85_to_npz(output_path: str, smplx_85: np.ndarray, fps: float = 30.
     np.savez(output_path,poses=body_pose_3d,trans=root_translation,betas=betas,gender='male',mocap_framerate=fps)
     print(f"Successfully saved SMPLX 85D data to {output_path}")
 
-def parse_img_data(mp4_paths, idx):
-        """
-        Args:
-            mp4_paths: MP4 file paths
-            idx: Current frame index
 
-        Returns:
-            frames: (img_history_size, H, W, 3) image frames
-        """
-        # cap = cv2.VideoCapture(str(mp4_path))
-        # total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        frames = []
-        try:
-            for mp4_path in mp4_paths:
-                # decoder = VideoDecoder(mp4_path, device='cpu', dimension_order='NHWC')
-                # total_frames = len(decoder)
-                # if idx < total_frames:
-                #     frame = decoder[idx]
-                #     if frame is not None:
-                #         # BGR to RGB
-                #         frame = frame.cpu().numpy()
-                #         frames.append(frame)
-                #     else:
-                #         print(f"Warning: Not enough frames in {mp4_path}")
-                #         break
-                # else:
-                #     # If frame index exceeds total frames, use last valid frame
-                #     print(f"Warning: Frame index exceeds total frames in {mp4_path}")
-                #     break
-                cap = cv2.VideoCapture(mp4_path)
-                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
-                if idx < total_frames:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-                    ret, frame = cap.read()
-                    cap.release()
-                    if ret:
-                        frame = frame[..., ::-1]
-                        #print(frame.shape)
-                        frames.append(frame)
-                    else:
-                        print(f"Warning: Not enough frames in {mp4_path}")
-                        break
-                else:
-                    print(f"Warning: Frame index exceeds total frames in {mp4_path}")
-                    break
-        except Exception as e:
-            raise ValueError(f"Error loading image frames: {e}")
 
-        # Convert to numpy array
-        # frames = np.array(frames) # type: ignore
+def parse_img_data(img_paths):
+    """
+    Args:
+        img_paths: 图片文件路径列表（支持PNG/JPG/灰度图/RGBA等常见格式）
 
-        return frames
+    Returns:
+        frames: (N, H, W, 3) 格式的列表，N为有效读取的图片数量，每个元素是RGB格式的图片数组
+                （若某张图片读取失败，会跳过并打印警告，不影响其他图片读取）
+    """
+    frames = []
+    try:
+        # 遍历所有图片路径，逐个读取
+        for img_path in img_paths:
+            # 1. 校验文件是否存在
+            if not os.path.exists(img_path):
+                print(f"Warning: 图片文件不存在 {img_path}")
+                continue
+            
+            # 2. 读取图片（-1保留原通道信息）
+            img = cv2.imread(img_path, -1)
+            if img is None:
+                print(f"Warning: 读取图片失败 {img_path}（文件损坏/格式不支持）")
+                continue
+            
+            # 3. 统一转换为RGB 3通道格式
+            if len(img.shape) == 2:  # 灰度图转RGB
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+            elif img.shape[-1] == 3:  # BGR彩色图转RGB
+                img = img[..., ::-1]
+            elif img.shape[-1] == 4:  # RGBA透明图（去除Alpha通道）
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+            
+            img = cv2.resize(img, (270, 480), interpolation=cv2.INTER_LINEAR)
+            # 4. 将处理后的图片加入结果列表
+            frames.append(img)
+
+    except Exception as e:
+        raise ValueError(f"Error loading image frames: {e}")
+
+    return frames
 
 
 if __name__ == "__main__":
-    qwen_model_path = "/gemini-2/space/zjk/csq/mocap274_4375_326331_epoch4k"
-    random_count = 40
+    qwen_model_path = "/gemini-2/space/zjk/csq/v_326331417_ran_6m_1prompt/checkpoint-60000"
     lora_path = None
     comp_device = torch.device('cuda')
     mean = np.load('mean_std/motionmillion/mean.npy')
     std = np.load('mean_std/motionmillion/std.npy')
-    
+
+    random_count = 5
         
     random.seed(42)
     expname = input('Input experiment name: ')
@@ -389,24 +378,25 @@ if __name__ == "__main__":
     print(f"Using device: {comp_device}")
     processor, model, net = load_model(qwen_model_path, lora_path, comp_device, args)
     
-    data_root = '/gemini-2/space/zjk/csq/project/finetrain/data/processed_data326'
-    
+    data_root = '/gemini-2/space/zjk/csq/project/finetrain/data/417_6m'
+    pic_root = '/gemini-2/space/zjk/csq/project/MotionMillion-Codes/assets/infer_image'
     splits=[]
-    video_paths=[]
+    pic_paths=[]
     for folder_name in os.listdir(data_root):
         folder_path = os.path.join(data_root, folder_name)
 
         if not os.path.isdir(folder_path):
             continue
-
         mp4_files = [f for f in os.listdir(folder_path) if f.lower().endswith(".mp4")]
         mp4_path = [os.path.join(folder_path,f) for f in mp4_files]
-
         if len(mp4_files) == 3:
             splits.append(folder_name)
-            video_paths.append(mp4_path)
+            
     splits = splits * 10 
-    video_paths = video_paths * 10
+    
+    pic_files = [f for f in os.listdir(pic_root) if f.lower().endswith(".png")]
+    pic_path = [os.path.join(pic_root,f) for f in pic_files]
+    pic_paths.append(pic_path)
     # splits = random.sample(splits,random_count)
     # video_paths = random.sample(video_paths,random_count)
     
@@ -432,19 +422,20 @@ if __name__ == "__main__":
         gt_motion = np.load(gt_path)
         print(f"原始数据shape:{gt_motion.shape}")
         #breakpoint()
-        idx_end = len(gt_motion) -  100
+        # idx_end = len(gt_motion) -  100
         
-        idx = random.randrange(10,idx_end + 1, 2)
+        idx = 10
         
-        task = random.choice(['ti2m','tim2m'])
+        task = random.choice(['ti2m'])#'tim2m'
         
-        frames = parse_img_data(video_paths[i],idx)
+        frames = parse_img_data(pic_paths[0])
+        
         observations = [Image.fromarray(img) for img in frames]
         
-        text = ''
-        with open(text_path) as f:
-            texts = f.readlines()
-            text = random.choice(texts)
+        text = 'Using large, slow, and steady movements, carefully place the block on the table into the basket'
+        # with open(text_path) as f:
+        #     texts = f.readlines()
+        #     text = random.choice(texts)
         
         fsq_ids = np.load(motion_path)
         fsq_ids = fsq_ids.reshape(-1).tolist()
@@ -499,6 +490,7 @@ if __name__ == "__main__":
         result = output_text[0]
         #breakpoint()
         _predmotion_ids = extract_motion_ids(result)
+        print(f"提取的motion ids: {_predmotion_ids}")
         predmotion_ids = fsq_ids[:idx//2]+_predmotion_ids
         predmotion = torch.tensor([predmotion_ids]).to(comp_device).reshape(-1)
         
@@ -530,19 +522,21 @@ if __name__ == "__main__":
         
 
         pred_npz_path = os.path.join('vis_result',expname,f'{predname}.npz')
+        fsq_npz_path = os.path.join('vis_result',expname,f'{fsqname}.npz')
         gt_npz_path = os.path.join('vis_result',expname,f'{gtname}.npz')
         
         save_smplx85_to_npz(pred_npz_path,pred_positions_with_heading)
         save_smplx85_to_npz(gt_npz_path,gt_positions_with_heading)
+        save_smplx85_to_npz(fsq_npz_path,fsq_positions_with_heading)
         
         #可视化
-        # output_path_pred = os.path.join('vis_result', expname, f'{predname}.gif')
-        # output_path_gt = os.path.join('vis_result', expname, f'{gtname}.gif')
+        output_path_pred = os.path.join('vis_result', expname, f'{predname}.gif')
+        output_path_gt = os.path.join('vis_result', expname, f'{gtname}.gif')
         # output_path_fsq = os.path.join('vis_result',  expname, f'{fsqname}.gif')
         
-        # visualize_smplx_85(pred_positions_with_heading, output_path=output_path_pred, title=predname, fps=args.fps)
+        visualize_smplx_85(pred_positions_with_heading, output_path=output_path_pred, title=predname, fps=args.fps)
         # visualize_smplx_85(fsq_positions_with_heading, output_path=output_path_fsq, title=fsqname, fps=args.fps)
-        # visualize_smplx_85(gt_positions_with_heading, output_path=output_path_gt, title=gtname, fps=args.fps)
+        visualize_smplx_85(gt_positions_with_heading, output_path=output_path_gt, title=gtname, fps=args.fps)
     
     # 保存输入文本
     # with open(os.path.join('visual_test', expname, 'texts.txt'), 'w') as f:

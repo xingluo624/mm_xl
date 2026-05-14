@@ -8,10 +8,8 @@ import json
 import options.option_transformer as option_trans
 import models.vqvae as vqvae
 import utils.utils_model as utils_model
-from dataset import dataset_tokenize
 from tqdm import tqdm
 from accelerate import Accelerator
-from tqdm import tqdm
 
  
 if __name__ == '__main__':

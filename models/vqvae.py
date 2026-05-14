@@ -33,11 +33,11 @@ class VQVAE_251(nn.Module):
         
         if args.causal:
             print('use causal conv !!!')
-            self.encoder = CausalEncoder(251 if args.dataname == 'kit' else 272, output_emb_width, down_t, stride_t, width, depth, dilation_growth_rate, activation=activation, norm=norm, kernel_size=kernel_size, use_patcher=use_patcher, patch_size=patch_size, patch_method=patch_method, use_attn=use_attn)
-            self.decoder = CausalDecoder(251 if args.dataname == 'kit' else 272, output_emb_width, down_t, stride_t, width, depth, dilation_growth_rate, activation=activation, norm=norm, kernel_size=kernel_size, use_patcher=use_patcher, patch_size=patch_size, patch_method=patch_method, use_attn=use_attn)
+            self.encoder = CausalEncoder(274 if args.add_hand == True else 272, output_emb_width, down_t, stride_t, width, depth, dilation_growth_rate, activation=activation, norm=norm, kernel_size=kernel_size, use_patcher=use_patcher, patch_size=patch_size, patch_method=patch_method, use_attn=use_attn)
+            self.decoder = CausalDecoder(274 if args.add_hand == True else 272, output_emb_width, down_t, stride_t, width, depth, dilation_growth_rate, activation=activation, norm=norm, kernel_size=kernel_size, use_patcher=use_patcher, patch_size=patch_size, patch_method=patch_method, use_attn=use_attn)
         else:
-            self.encoder = Encoder(251 if args.dataname == 'kit' else 272, output_emb_width, down_t, stride_t, width, depth, dilation_growth_rate, activation=activation, norm=norm, kernel_size=kernel_size, use_patcher=use_patcher, patch_size=patch_size, patch_method=patch_method)
-            self.decoder = Decoder(251 if args.dataname == 'kit' else 272, output_emb_width, down_t, stride_t, width, depth, dilation_growth_rate, activation=activation, norm=norm, kernel_size=kernel_size, use_patcher=use_patcher, patch_size=patch_size, patch_method=patch_method)
+            self.encoder = Encoder(274 if args.add_hand == True else 272, output_emb_width, down_t, stride_t, width, depth, dilation_growth_rate, activation=activation, norm=norm, kernel_size=kernel_size, use_patcher=use_patcher, patch_size=patch_size, patch_method=patch_method)
+            self.decoder = Decoder(274 if args.add_hand == True else 272, output_emb_width, down_t, stride_t, width, depth, dilation_growth_rate, activation=activation, norm=norm, kernel_size=kernel_size, use_patcher=use_patcher, patch_size=patch_size, patch_method=patch_method)
 
         if args.quantizer == "ema_reset":
             self.quantizer = QuantizeEMAReset(nb_code, code_dim, args)

@@ -1,26 +1,27 @@
 export NCCL_P2P_DISABLE=1
 export NCCL_IB_DISABLE=1
 export NCCL_TIMEOUT=1200
-CUDA_VISIBLE_DEVICES=0 accelerate launch  --num_processes 1 --main_process_port 29701 train_tokenizer.py \
---data-root /ssd/zhengjiakun/dataset/MotionMillion/MotionMillion \
+CUDA_VISIBLE_DEVICES=1 accelerate launch  --num_processes 1 --main_process_port 29701 train_tokenizer.py \
+--data-root /ssd/caoshiqin/datasets/our_mocap_data/processed_data \
 --add-hand True \
+--causal \
 --batch-size 64 \
 --lr 5e-5 \
---total-iter 6000000 \
+--total-iter 3000000 \
 --lr-scheduler 300000 \
 --down-t 1 \
 --depth 3 \
 --dilation-growth-rate 3 \
---out-dir /ssd/caoshiqin/FSQ \
---dataname motionmillion \
+--out-dir FSQ \
+--dataname mocap \
 --vq-act relu \
 --quantizer ema_reset \
 --loss-vel 0.5 \
 --recons-loss l1_smooth \
---exp-name 274pt_bce_4096_causal \
+--exp-name fsqft_326331417424507508 \
 --quantizer FSQ \
 --nb-code 4096 \
---motion_type vector_272 \
+--motion_type vector_274 \
 --warm-up-iter 2000 \
 --num-workers 64 \
 --window-size 96 \
@@ -29,10 +30,9 @@ CUDA_VISIBLE_DEVICES=0 accelerate launch  --num_processes 1 --main_process_port 
 --patch_size 1 \
 --patch_method haar \
 --vq-norm LN \
---causal \
---eval-iter 1000000 \
---save-iter 1000000 
-#--resume-pth /ssd/caoshiqin/FSQ/train_FSQ_totaliter3000000_codebook8192/net_290000.pth
+--eval-iter 500000 \
+--save-iter 500000 \
+--resume-pth /ssd/caoshiqin/FSQ/274pt_bce_4096_causal/net_2000000.pth
 
 # --print-iter 1 \
 # --eval-iter 10 \
