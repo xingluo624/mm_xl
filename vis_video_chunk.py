@@ -9,7 +9,7 @@ from utils.quaternion import *
 from peft import PeftModel
 import random
 import time
-
+from torchvision.transforms import v2
 from visualize.plot_3d_global import plot_3d_motion
 from visualize.smplx2joints import process_smplx_data
 #from visualize.motion_ik import convert_motion_mp4
@@ -20,6 +20,7 @@ from utils.face_z_align_util import rotation_6d_to_matrix, matrix_to_axis_angle
 import moviepy as mp
 import re
 warnings.filterwarnings('ignore')
+from decord import VideoReader, cpu
 
 def id_to_token(motion_id):
     return f'<motion_id_{motion_id}>'
@@ -157,20 +158,6 @@ def smplx85_2_smplx322(smplx_no_shape_data):
     
     return result
 
-# def visualize_smplx_85(data, title=None, output_path='./recon_272/0_14_rot_new3.mp4', fps=60):
-#     #smpl可视化
-#     smplx_85_data = data
-#     if len(smplx_85_data.shape) == 3:
-#        smplx_85_data = np.squeeze(smplx_85_data, axis=0)
-    
-#     smplx_85_data = smplx85_2_smplx322(smplx_85_data)
-#     vert, joints, motion, faces = process_smplx_data(smplx_85_data, norm_global_orient=False, transform=False)
-    
-#     xyz = joints[:, :22, :].reshape(-1, 22, 3).detach().cpu().numpy()
-#     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-#     convert_motion_mp4(xyz, output_path)
-
 
 
 def visualize_smplx_85(data, title=None, output_path='./recon_272/0_14_rot_new3.mp4', fps=60):
@@ -209,7 +196,7 @@ def load_model(qwen_model_path, lora_path, comp_device,args):
         qwen_model_path,
         dtype="auto", 
         device_map="auto"
-    ).to(comp_device)
+    )
 
     
     if lora_path and os.path.exists(lora_path):
@@ -223,7 +210,6 @@ def load_model(qwen_model_path, lora_path, comp_device,args):
         print("未加载LoRA适配器(路径为空或不存在)")
 
     model.eval()  
-    model.to(comp_device)
     
     print(f"Qwen3-VL with LoRA loaded successfully on {comp_device}")
         
@@ -249,7 +235,7 @@ def load_model(qwen_model_path, lora_path, comp_device,args):
     ckpt = {k.replace('module.', ''): v for k, v in ckpt.items()}
     net.load_state_dict(ckpt, strict=True)
     net.eval()
-    net.to(comp_device)
+    # net.to(comp_device)
     print('Load VQVAE model successfully!')
     
     return processor, model, net
@@ -311,69 +297,62 @@ def save_smplx85_to_npz(output_path: str, smplx_85: np.ndarray, fps: float = 30.
     np.savez(output_path,poses=body_pose_3d,trans=root_translation,betas=betas,gender='male',mocap_framerate=fps)
     print(f"Successfully saved SMPLX 85D data to {output_path}")
 
+
+
 def parse_img_data(mp4_paths, idx):
-        """
-        Args:
-            mp4_paths: MP4 file paths
-            idx: Current frame index
+    """
+    Args:
+        mp4_paths: MP4 file paths
+        idx: Current frame index
 
-        Returns:
-            frames: (img_history_size, H, W, 3) image frames
-        """
-        # cap = cv2.VideoCapture(str(mp4_path))
-        # total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        frames = []
-        try:
-            for mp4_path in mp4_paths:
-                # decoder = VideoDecoder(mp4_path, device='cpu', dimension_order='NHWC')
-                # total_frames = len(decoder)
-                # if idx < total_frames:
-                #     frame = decoder[idx]
-                #     if frame is not None:
-                #         # BGR to RGB
-                #         frame = frame.cpu().numpy()
-                #         frames.append(frame)
-                #     else:
-                #         print(f"Warning: Not enough frames in {mp4_path}")
-                #         break
-                # else:
-                #     # If frame index exceeds total frames, use last valid frame
-                #     print(f"Warning: Frame index exceeds total frames in {mp4_path}")
-                #     break
-                cap = cv2.VideoCapture(mp4_path)
-                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
-                if idx < total_frames:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-                    ret, frame = cap.read()
-                    cap.release()
-                    if ret:
-                        frame = frame[..., ::-1]
-                        #print(frame.shape)
-                        frames.append(frame)
-                    else:
-                        print(f"Warning: Not enough frames in {mp4_path}")
-                        break
-                else:
-                    print(f"Warning: Frame index exceeds total frames in {mp4_path}")
-                    break
-        except Exception as e:
-            raise ValueError(f"Error loading image frames: {e}")
+    Returns:
+        frames: list of (H, W, 3) RGB numpy arrays
+    """
+    frames = []
+    try:
+        for mp4_path in mp4_paths:
+            vr = VideoReader(mp4_path, ctx=cpu(0), num_threads=1)
+            total_frames = len(vr)
 
-        # Convert to numpy array
-        # frames = np.array(frames) # type: ignore
+            if idx < total_frames:
+                frame = vr[idx].asnumpy()
+                frames.append(frame)
+            else:
+                print(f"Warning: Frame index exceeds total frames in {mp4_path}")
+                break
+            del vr
+    except Exception as e:
+        raise ValueError(f"Error loading image frames: {e}")
 
-        return frames
-
+    return frames
 
 if __name__ == "__main__":
-    
-    args = option_trans.get_args_parser()
-    
-    data_root = '/gemini-2/space/zjk/csq/project/finetrain/data/507508/processed_data'
+    qwen_model_path = "/data_public/zjk/csq/PyProject/ft_qwenvl/logs/507508_2_1m_chunk_epoch16k/checkpoint-66000"
+    random_count = 40
+    lora_path = None
     comp_device = torch.device('cuda')
-    splits=[]
+    mean = np.load('mean_std/motionmillion/mean.npy')
+    std = np.load('mean_std/motionmillion/std.npy')
+
+    chunk_size = 64
+    #random.seed(42)
+    expname = input('Input experiment name: ')
+    os.makedirs(f'vis_result/{expname}', exist_ok=True)
+    args = option_trans.get_args_parser()
+    if args.motion_type == 'vector_274':
+        print("update mean std")
+        new_dim_mean = np.array([0.0, 0.0], dtype=np.float32)  
+        new_dim_std = np.array([1.0, 1.0], dtype=np.float32)    
+        mean = np.concatenate([mean, new_dim_mean], axis=0)  # shape (274,)
+        std = np.concatenate([std, new_dim_std], axis=0) 
+        
+    print(f"Using device: {comp_device}")
+    processor, model, net = load_model(qwen_model_path, lora_path, comp_device, args)
     
+    data_root = '/data_public/zjk/csq/PyProject/ft_qwenvl/data/507508_2_1m/processed_data'
+    
+    splits=[]
+    video_paths=[]
     for folder_name in os.listdir(data_root):
         folder_path = os.path.join(data_root, folder_name)
 
@@ -385,33 +364,142 @@ if __name__ == "__main__":
 
         if len(mp4_files) == 3:
             splits.append(folder_name)
-            
+            video_paths.append(mp4_path)
+    splits = splits 
     print(f"Found {len(splits)} valid samples with 3 MP4 files each.")
     print(splits)
-
-    save_txt_path = "fsqmotion_results507508.txt"
-    for i in range(len(splits)):
+    #video_paths = video_paths 
+    # splits = random.sample(splits,random_count)
+    # video_paths = random.sample(video_paths,random_count)
+    
+    for i in range(random_count):
         split = splits[i]
         
-        
-        # if args.motion_type == 'vector_272':
-        #     motion_path = os.path.join(data_root,split,'fsq_motion_272.npy')
-        # elif args.motion_type == 'vector_274':
-        motion_path = os.path.join(data_root,split,'fsq_motion_274.npy')
+        #gt_path = os.path.join(data_root,split,f'{split}.npy')
+        if args.motion_type == 'vector_272':
+            motion_path = os.path.join(data_root,split,'motion_272.npy')
+        elif args.motion_type == 'vector_274':
+            motion_path = os.path.join(data_root,split,'motion_274.npy')
             
+        text_path= os.path.join(data_root,split,'text.txt')
+  
+        if not os.path.exists(text_path):
+            print(f'cant read {text_path}')
+            continue
         if not os.path.exists(motion_path):
             print(f'cant read {motion_path}')
             continue
-       
-        fsq_ids = np.load(motion_path)
-        fsq_ids = fsq_ids.reshape(-1).tolist()
+        gt_motion = np.load(motion_path)
+        print(f'load motion from {motion_path} with shape {gt_motion.shape}')
+        gt_motion = (gt_motion - mean) / std
 
-        
-        fsqmotion = torch.tensor([fsq_ids]).to(comp_device).reshape(-1)
-        print(f"真实fsq: {fsqmotion}")
-        with open(save_txt_path, 'a', encoding='utf-8') as f:
-            f.write(f"========== Sample: {split} ==========\n")
-            f.write(f"{fsqmotion}\n\n")
+    
+        idx_end = len(gt_motion) - 32
+        idx = random.randrange(0, idx_end + 1, 2)
 
+        pose = gt_motion[idx:idx+chunk_size] 
+        pose = torch.from_numpy(pose).float().unsqueeze(0)
+    
+        target = net.encode(pose)
+        target = target.cpu().numpy()
+        #breakpoint()
+        fsq_ids = target.tolist()
         
+        frames = parse_img_data(video_paths[i],idx)
+        resize = v2.Resize(
+                size=(270,480),
+                interpolation=v2.InterpolationMode.BILINEAR
+            )
+        t1 = v2.Compose([resize])
+        frames = [np.array(t1(Image.fromarray(img))) for img in frames]
+        observations = [Image.fromarray(img) for img in frames]
+        
+        with open(text_path) as f:
+            texts = f.readlines()
+            text = random.choice(texts)
+        
+        
+        #breakpoint()
+        messages = []
+        
+        template = "generate motion from caption and images <Caption_Placeholder>"
+        prompt = template.replace("<Caption_Placeholder>", text)
+        
+        content = [{"type": "image", "image": img} for img in observations]
+        print(content)
+        content.append({"type": "text", "text": prompt})
+        user_msg = {"role": "user", "content": content}
+        messages.append([user_msg])
+
+            
+        inputs = processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt"
+            )
+        inputs = inputs.to(model.device)
+        
+        t_generate_start = time.time()
+        generated_ids = model.generate(**inputs, max_new_tokens=256)
+        t_generate_end = time.time()
+        print(f"Generation time: {t_generate_end - t_generate_start:.4f}s")
+        
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        print(f"生成token数{len(generated_ids_trimmed[0])}")
+        output_text = processor.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
+        
+        result = output_text[0]
+        #breakpoint()
+        predmotion_ids = extract_motion_ids(result)
+        print(f"生成的motion ids:{result}")
+        
+        predmotion = torch.tensor([predmotion_ids]).to(comp_device).reshape(-1)
+        
+        print(f"真实fsq: {fsq_ids}")
+        #breakpoint()
+        # predpose = net.forward_decoder(predmotion)
+        # fsqpose = net.forward_decoder(fsqmotion)
+        
+        # # hand_result = predpose[0, :, -2:]
+        # # binary_hand_result = (hand_result > 0).float()
+        # #breakpoint()
+        
+        # predpose = inv_transform(predpose.detach().cpu().numpy(), mean, std)
+        # fsqpose = inv_transform(fsqpose.detach().cpu().numpy(), mean, std)
+
+        # predname = 'pred_{}'.format(i) 
+        # gtname = "gt_{}".format(i)
+        # fsqname = 'fsq_{}'.format(i)
+        # #breakpoint()
+        # print(len(predpose[0]))
+        # print(len(fsqpose[0]))
+        # print(len(gt_motion))
+        
+    
+        # pred_positions_with_heading = recover_from_local_rotation(predpose.squeeze(0), 22)
+        # fsq_positions_with_heading = recover_from_local_rotation(fsqpose.squeeze(0), 22)
+        # gt_positions_with_heading = recover_from_local_rotation(gt_motion.squeeze(), 22)
+        
+
+        # pred_npz_path = os.path.join('vis_result',expname,f'{predname}.npz')
+        # gt_npz_path = os.path.join('vis_result',expname,f'{gtname}.npz')
+        
+        # save_smplx85_to_npz(pred_npz_path,pred_positions_with_heading)
+        # save_smplx85_to_npz(gt_npz_path,gt_positions_with_heading)
+        
+        # #可视化
+        # output_path_pred = os.path.join('vis_result', expname, f'{predname}.gif')
+        # output_path_gt = os.path.join('vis_result', expname, f'{gtname}.gif')
+        # # output_path_fsq = os.path.join('vis_result',  expname, f'{fsqname}.gif')
+        
+        # visualize_smplx_85(pred_positions_with_heading, output_path=output_path_pred, title=predname, fps=args.fps)
+        # # visualize_smplx_85(fsq_positions_with_heading, output_path=output_path_fsq, title=fsqname, fps=args.fps)
+        # visualize_smplx_85(gt_positions_with_heading, output_path=output_path_gt, title=gtname, fps=args.fps)
+    
     print('All done!')

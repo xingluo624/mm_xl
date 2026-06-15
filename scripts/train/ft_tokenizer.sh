@@ -2,10 +2,9 @@ export NCCL_P2P_DISABLE=1
 export NCCL_IB_DISABLE=1
 export NCCL_TIMEOUT=1200
 CUDA_VISIBLE_DEVICES=1 accelerate launch  --num_processes 1 --main_process_port 29701 train_tokenizer.py \
---data-root /ssd/caoshiqin/datasets/our_mocap_data/processed_data \
+--data-root /data_public/zjk/csq/PyProject/motionmillion_myown/data/5-17/processed_data \
 --add-hand True \
---causal \
---batch-size 64 \
+--batch-size 16 \
 --lr 5e-5 \
 --total-iter 3000000 \
 --lr-scheduler 300000 \
@@ -18,7 +17,7 @@ CUDA_VISIBLE_DEVICES=1 accelerate launch  --num_processes 1 --main_process_port 
 --quantizer ema_reset \
 --loss-vel 0.5 \
 --recons-loss l1_smooth \
---exp-name fsqft_326331417424507508 \
+--exp-name fsqft_517 \
 --quantizer FSQ \
 --nb-code 4096 \
 --motion_type vector_274 \
@@ -32,7 +31,7 @@ CUDA_VISIBLE_DEVICES=1 accelerate launch  --num_processes 1 --main_process_port 
 --vq-norm LN \
 --eval-iter 500000 \
 --save-iter 500000 \
---resume-pth /ssd/caoshiqin/FSQ/274pt_bce_4096_causal/net_2000000.pth
+--resume-pth FSQ/507508/net_2100000.pth
 
 # --print-iter 1 \
 # --eval-iter 10 \

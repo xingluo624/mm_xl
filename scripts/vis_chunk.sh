@@ -1,9 +1,9 @@
-CUDA_VISIBLE_DEVICES=4 python vis_video.py \
+CUDA_VISIBLE_DEVICES=0 python vis_video_chunk.py \
 --qwen_model_path /data_public/zjk/csq/PyProject/ft_qwenvl/logs/517_3m_2taskallidx_16kepoch_noresize \
 --add-hand True \
 --exp-name vis_v \
 --nb-code 4096 \
---resume-pth FSQ/ft_602/net_3000000.pth \
+--resume-pth FSQ/507508/net_2100000.pth \
 --dataname mocap \
 --down-t 1 \
 --depth 3 \
